@@ -1,0 +1,27 @@
+# Serviço de usuário do server (systemd --user). Instalação:
+#   mkdir -p ~/.config/systemd/user ~/.config/capi_net
+#   cp scripts/systemd/capi_net_server.service ~/.config/systemd/user/
+#   cp scripts/systemd/server.env.example ~/.config/capi_net/server.env   # e ajuste
+#   loginctl enable-linger "$USER"      # inicia no boot, sem login
+#   systemctl --user daemon-reload && systemctl --user enable --now capi_net_server
+# Logs: journalctl --user -u capi_net_server -f
+
+[Unit]
+Description=capi_net server (SPRT distribuído do capizero)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/capi_net
+EnvironmentFile=%h/.config/capi_net/server.env
+ExecStart=%h/capi_net/build/capi_net_server
+# O Postgres é serviço do sistema e pode subir depois: se a conexão falhar o
+# server sai com erro e é reiniciado.
+Restart=on-failure
+RestartSec=5
+# SIGTERM: o server para de aceitar requisições e cancela um smoke test em curso.
+KillSignal=SIGTERM
+TimeoutStopSec=30
+
+[Install]
+WantedBy=default.target

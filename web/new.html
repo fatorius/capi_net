@@ -1,0 +1,129 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>capi_net · novo teste</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js"></script>
+</head>
+<body>
+<script>
+"use strict";
+
+mount("new", async (main) => {
+  let config = { presets: {} }, books = [];
+  try { [config, books] = await Promise.all([api("/api/config"), api("/api/books")]); }
+  catch (e) { main.append(errorBox(e)); return; }
+
+  const field = (label, input, hint) => h("label", {}, label, input, hint ? h("small", {}, hint) : null);
+  const inp = (attrs) => h("input", attrs);
+
+  const kind = h("select", { name: "kind" },
+    h("option", { value: "sprt" }, "SPRT"), h("option", { value: "gauntlet" }, "Gauntlet"));
+  const preset = h("select", { name: "preset" },
+    h("option", { value: "gainer" }, "gainer — patch que promete ganho"),
+    h("option", { value: "nonreg" }, "nonreg — simplificação que não pode piorar"),
+    h("option", { value: "custom" }, "custom — bounds explícitos"));
+  const book = h("select", { name: "book_name", required: true },
+    books.map((b) => h("option", { value: b.name }, `${b.name} (${fmt.int(b.positions)} posições)`)));
+
+  const elo0 = inp({ name: "sprt_elo0", type: "number", step: "any", value: "0" });
+  const elo1 = inp({ name: "sprt_elo1", type: "number", step: "any", value: "5" });
+  const alpha = inp({ name: "sprt_alpha", type: "number", step: "any", value: "0.05" });
+  const beta = inp({ name: "sprt_beta", type: "number", step: "any", value: "0.05" });
+  const custom = h("div", { class: "row" },
+    field("elo0", elo0), field("elo1", elo1), field("α", alpha), field("β", beta));
+  const presetInfo = h("small", { class: "muted" });
+
+  const sprtBox = h("fieldset", {}, h("legend", {}, "SPRT (Elo normalizado)"),
+    h("div", { class: "row" }, field("Preset", preset, null)), presetInfo, custom);
+
+  function syncVisibility() {
+    sprtBox.hidden = kind.value !== "sprt";
+    custom.hidden = preset.value !== "custom";
+    const p = config.presets[preset.value];
+    presetInfo.textContent = p ? `nElo [${p.elo0}, ${p.elo1}] · α ${p.alpha} · β ${p.beta}` : "";
+  }
+  kind.addEventListener("change", syncVisibility);
+  preset.addEventListener("change", syncVisibility);
+
+  const out = h("div", {});
+  const submit = h("button", { class: "primary", type: "submit" }, "Criar teste");
+
+  const form = h("form", { class: "stack" },
+    field("Nome", inp({ name: "name", placeholder: "ex: LMR tweak" }),
+      "Opcional; o padrão é “candidate vs baseline”."),
+    h("div", { class: "row" },
+      field("Candidate", inp({ name: "candidate_ref", required: true, placeholder: "feature/lmr" }),
+        "Branch, tag ou SHA."),
+      field("Baseline", inp({ name: "baseline_ref", required: true, placeholder: "beta2.8.1" }),
+        "Branch, tag ou SHA.")),
+    h("div", { class: "row" },
+      field("Tipo", kind),
+      field("TC (s)", inp({ name: "tc", required: true, value: "10+0.1", pattern: "[0-9.]+(\\+[0-9.]+)?" }),
+        "base+incremento, em segundos."),
+      field("Pares", inp({ name: "total_pairs", type: "number", min: "1", required: true, value: "15000" }),
+        "Cada par = 2 partidas.")),
+    h("div", { class: "row" },
+      field("Book", book),
+      field("Hash (MB)", inp({ name: "hash_mb", type: "number", min: "1", value: "16" })),
+      field("Prioridade", inp({ name: "priority", type: "number", value: "0" }), "Maior roda primeiro.")),
+    sprtBox,
+    field("Enviado por", inp({ name: "submitted_by", placeholder: "opcional" })),
+    h("div", { class: "actions" }, submit),
+    out);
+
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    const f = new FormData(form);
+    const body = {
+      kind: kind.value,
+      candidate_ref: f.get("candidate_ref").trim(),
+      baseline_ref: f.get("baseline_ref").trim(),
+      tc: f.get("tc").trim(),
+      book_name: f.get("book_name"),
+      total_pairs: Number(f.get("total_pairs")),
+      hash_mb: Number(f.get("hash_mb")),
+      priority: Number(f.get("priority")),
+    };
+    if (f.get("name").trim()) body.name = f.get("name").trim();
+    if (f.get("submitted_by").trim()) body.submitted_by = f.get("submitted_by").trim();
+    if (kind.value === "sprt") {
+      body.preset = preset.value;
+      if (preset.value === "custom") {
+        body.sprt_elo0 = Number(elo0.value);
+        body.sprt_elo1 = Number(elo1.value);
+        body.sprt_alpha = Number(alpha.value);
+        body.sprt_beta = Number(beta.value);
+      }
+    }
+
+    submit.disabled = true;
+    submit.textContent = "Resolvendo refs…";
+    out.replaceChildren();
+    try {
+      const r = await api("/api/admin/tests", { method: "POST", body });
+      out.replaceChildren(h("div", { class: "ok-box" },
+        h("div", {}, `Teste #${r.test_id} criado; smoke test em andamento.`),
+        h("div", { class: "mono" }, `${r.candidate.ref} → ${r.candidate.commit}`),
+        h("div", { class: "mono" }, `${r.baseline.ref} → ${r.baseline.commit}`),
+        h("div", {}, h("a", { href: `/tests/${r.test_id}` }, "Acompanhar o teste →"))));
+      setTimeout(() => { location.href = `/tests/${r.test_id}`; }, 2500);
+    } catch (e) {
+      out.replaceChildren(errorBox(e));
+      submit.disabled = false;
+      submit.textContent = "Criar teste";
+    }
+  });
+
+  main.append(
+    h("h1", {}, "Novo teste"),
+    h("div", { class: "subtitle" },
+      `Refs de ${config.github_repo}. São resolvidos para SHAs uma única vez, na criação.`),
+    form);
+  syncVisibility();
+});
+</script>
+</body>
+</html>

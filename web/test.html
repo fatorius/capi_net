@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>capi_net · teste</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js"></script>
+</head>
+<body>
+<script>
+"use strict";
+
+const TEST_ID = Number(location.pathname.split("/").pop());
+const SVG = "http://www.w3.org/2000/svg";
+
+function s(tag, attrs = {}, text) {
+  const el = document.createElementNS(SVG, tag);
+  for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+  if (text !== undefined) el.textContent = text;
+  return el;
+}
+
+// LLR × pares, com as fronteiras do SPRT.
+function llrChart(history, lower, upper, totalPairs) {
+  const W = 1000, H = 260, L = 44, R = 12, T = 12, B = 28;
+  const svg = s("svg", { class: "chart", viewBox: `0 0 ${W} ${H}`, preserveAspectRatio: "none" });
+  const pts = history.filter((p) => p.llr !== null);
+  const maxX = Math.max(totalPairs || 1, ...pts.map((p) => p.pairs), 1);
+  const ys = pts.map((p) => p.llr);
+  const minY = Math.min(lower, ...ys) * 1.1, maxY = Math.max(upper, ...ys) * 1.1;
+  const x = (v) => L + (v / maxX) * (W - L - R);
+  const y = (v) => T + (1 - (v - minY) / (maxY - minY)) * (H - T - B);
+
+  for (const [v, label] of [[upper, "aceitar H1"], [0, ""], [lower, "aceitar H0"]]) {
+    svg.append(s("line", { x1: L, x2: W - R, y1: y(v), y2: y(v),
+      stroke: "var(--chart-bound)", "stroke-dasharray": v === 0 ? "2 4" : "6 4",
+      "vector-effect": "non-scaling-stroke" }));
+    svg.append(s("text", { x: L - 6, y: y(v) + 4, "text-anchor": "end" }, fmt.num(v, 2)));
+    if (label) svg.append(s("text", { x: W - R - 4, y: y(v) - 4, "text-anchor": "end" }, label));
+  }
+  svg.append(s("text", { x: L, y: H - 8 }, "0"));
+  svg.append(s("text", { x: W - R, y: H - 8, "text-anchor": "end" }, `${fmt.int(maxX)} pares`));
+
+  if (pts.length) {
+    const d = pts.map((p, i) => `${i ? "L" : "M"}${x(p.pairs).toFixed(1)},${y(p.llr).toFixed(1)}`).join("");
+    svg.append(s("path", { d, fill: "none", stroke: "var(--chart-line)", "stroke-width": 2,
+      "vector-effect": "non-scaling-stroke" }));
+  } else {
+    svg.append(s("text", { x: W / 2, y: H / 2, "text-anchor": "middle" }, "sem pares ainda"));
+  }
+  return svg;
+}
+
+function pentaTable(p, total) {
+  const cats = [["LL", p.ll], ["LD", p.ld], ["DD/WL", p.dd_wl], ["WD", p.wd], ["WW", p.ww]];
+  return h("table", {},
+    h("thead", {}, h("tr", {}, cats.map(([k]) => h("th", { class: "num" }, k)))),
+    h("tbody", {},
+      h("tr", {}, cats.map(([, v]) => h("td", { class: "num" }, fmt.int(v)))),
+      h("tr", {}, cats.map(([, v]) => h("td", { class: "num muted" },
+        total ? `${((100 * v) / total).toFixed(1)}%` : "–")))));
+}
+
+function progressBar(pairs) {
+  const total = Math.max(pairs.total, 1);
+  const seg = (n, color, label) => {
+    const el = h("span", { title: `${label}: ${n}` });
+    el.style.width = `${(100 * n) / total}%`;
+    el.style.background = color;
+    return el;
+  };
+  return h("div", {},
+    h("div", { class: "progress" },
+      seg(pairs.completed, "var(--good)", "completos"),
+      seg(pairs.leased, "var(--accent)", "em jogo"),
+      seg(pairs.discarded, "var(--bad)", "descartados")),
+    h("div", { class: "muted", style: "margin-top:6px" },
+      `${fmt.int(pairs.completed)} completos (${fmt.int(pairs.valid)} válidos) · ` +
+      `${fmt.int(pairs.leased)} em jogo · ${fmt.int(pairs.pending)} na fila · ` +
+      `${fmt.int(pairs.discarded)} descartados · total ${fmt.int(pairs.total)}`));
+}
+
+function adjudicationText(a) {
+  if (!a) return "–";
+  const parts = [];
+  parts.push(a.draw
+    ? `empate a partir do lance ${a.draw.movenumber}, |eval| ≤ ${a.draw.score_cp} cp por ${a.draw.movecount} lances`
+    : "empate desligada");
+  parts.push(a.resign
+    ? `vitória com |eval| ≥ ${a.resign.score_cp} cp por ${a.resign.movecount} lances` +
+      (a.resign.twosided ? " (as duas engines)" : "")
+    : "vitória desligada");
+  return parts.join(" · ");
+}
+
+function clientsTable(clients) {
+  if (!clients.length) return h("div", { class: "empty" }, "Nenhum client jogou este teste ainda.");
+  return h("div", { class: "table-wrap" }, h("table", {},
+    h("thead", {}, h("tr", {},
+      h("th", {}, "client"), h("th", {}, "CPU"), h("th", {}, "modo"), h("th", { class: "num" }, "slots"),
+      h("th", { class: "num" }, "pares"), h("th", { class: "num" }, "em jogo"),
+      h("th", { class: "num" }, "inválidas"), h("th", {}, "fastchess"), h("th", {}, "visto"))),
+    h("tbody", {}, clients.map((c) => h("tr", {},
+      h("td", {}, h("span", { class: c.online ? "good" : "muted" }, "● "), c.name,
+        c.status === "banned" ? [" ", h("span", { class: "badge rejected" }, "banido")] : null),
+      h("td", { title: c.core_topology || "" }, c.cpu_model || "–"),
+      h("td", { class: "mono" }, c.pinning_mode),
+      h("td", { class: "num" }, c.slots),
+      h("td", { class: "num" }, fmt.int(c.pairs_completed)),
+      h("td", { class: "num" }, fmt.int(c.pairs_leased)),
+      h("td", { class: "num" + (c.games_invalid ? " bad" : "") }, fmt.int(c.games_invalid)),
+      h("td", { class: "mono muted" }, c.fastchess_version || "–"),
+      h("td", { class: "muted" }, fmt.ago(c.last_seen)))))));
+}
+
+mount("tests", async (main) => {
+  let config = { github_repo: "fatorius/capizero" };
+  try { config = await api("/api/config"); } catch (e) { /* segue com o padrão */ }
+  const content = h("div", {});
+  main.append(content);
+
+  async function stopTest() {
+    if (!confirm(`Parar o teste #${TEST_ID}? Os resultados já recebidos são mantidos.`)) return;
+    try { await api(`/api/admin/tests/${TEST_ID}/stop`, { method: "POST" }); await load(); }
+    catch (e) { alert(e.message); }
+  }
+  async function setPriority(current) {
+    const v = prompt("Nova prioridade (maior roda primeiro):", String(current));
+    if (v === null) return;
+    const n = Number(v);
+    if (!Number.isInteger(n)) { alert("Prioridade deve ser um inteiro."); return; }
+    try { await api(`/api/admin/tests/${TEST_ID}`, { method: "PATCH", body: { priority: n } }); await load(); }
+    catch (e) { alert(e.message); }
+  }
+
+  async function load() {
+    let t, history, clients, validation;
+    try {
+      [t, history, clients, validation] = await Promise.all([
+        api(`/api/tests/${TEST_ID}/stats`),
+        api(`/api/tests/${TEST_ID}/history`),
+        api(`/api/tests/${TEST_ID}/clients`),
+        api(`/api/admin/tests/${TEST_ID}/validation`),
+      ]);
+    } catch (e) {
+      content.replaceChildren(errorBox(e));
+      return;
+    }
+    document.title = `capi_net · #${t.test_id} ${t.name}`;
+    const repo = `https://github.com/${config.github_repo}`;
+    const sp = t.sprt;
+    const active = ["running", "queued", "validating"].includes(t.status);
+
+    const engines = h("div", { class: "card" },
+      h("dl", { class: "kv" },
+        h("dt", {}, "candidate"),
+        h("dd", {}, `${t.candidate.ref} @ `,
+          h("a", { class: "mono", href: `${repo}/commit/${t.candidate.commit}` }, fmt.sha(t.candidate.commit))),
+        h("dt", {}, "baseline"),
+        h("dd", {}, `${t.baseline.ref} @ `,
+          h("a", { class: "mono", href: `${repo}/commit/${t.baseline.commit}` }, fmt.sha(t.baseline.commit))),
+        h("dt", {}, "diff"),
+        h("dd", {}, h("a", { href: `${repo}/compare/${t.baseline.commit}...${t.candidate.commit}` },
+          "ver no GitHub"))));
+
+    const params = h("div", { class: "card" },
+      h("dl", { class: "kv" },
+        h("dt", {}, "tipo"), h("dd", {}, t.kind === "sprt" ? "SPRT" : "gauntlet"),
+        h("dt", {}, "TC"), h("dd", {}, `${fmt.tc(t.tc_base_ms, t.tc_increment_ms)} s`),
+        h("dt", {}, "engine"), h("dd", {}, `Hash ${t.hash_mb} MB · Threads ${t.threads}`),
+        h("dt", {}, "book"), h("dd", {}, t.book_name),
+        sp ? [h("dt", {}, "SPRT"), h("dd", {},
+          `nElo [${sp.elo0}, ${sp.elo1}] · α ${sp.alpha} · β ${sp.beta}`)] : null,
+        h("dt", {}, "adjudicação"), h("dd", {}, adjudicationText(t.adjudication)),
+        h("dt", {}, "prioridade"), h("dd", {}, String(t.priority)),
+        h("dt", {}, "criado"), h("dd", {}, fmt.date(t.created_at)),
+        t.started_at ? [h("dt", {}, "iniciado"), h("dd", {}, fmt.date(t.started_at))] : null,
+        t.finished_at ? [h("dt", {}, "terminado"), h("dd", {}, fmt.date(t.finished_at))] : null));
+
+    const numbers = h("div", { class: "grid" },
+      h("div", { class: "card" },
+        h("div", { class: "muted" }, "Elo (logístico, IC 95%)"),
+        h("div", { class: "big" }, fmt.num(t.elo.value, 2, true)),
+        h("div", { class: "muted" }, `[${fmt.num(t.elo.ci_low, 2, true)}, ${fmt.num(t.elo.ci_high, 2, true)}]`)),
+      sp ? h("div", { class: "card" },
+        h("div", { class: "muted" }, "LLR"),
+        h("div", { class: "big" }, fmt.num(sp.llr, 2)),
+        h("div", {}, llrBar(sp.llr, sp.llr_lower, sp.llr_upper), " ",
+          h("span", { class: "muted" }, `[${fmt.num(sp.llr_lower)}, ${fmt.num(sp.llr_upper)}]`))) : null,
+      h("div", { class: "card" },
+        h("div", { class: "muted" }, "Pares válidos"),
+        h("div", { class: "big" }, fmt.int(t.pairs.valid)),
+        h("div", { class: "muted" }, `de ${fmt.int(t.pairs.total)}`)));
+
+    const actions = h("div", { class: "actions" },
+      h("a", { class: "button", href: `/api/tests/${TEST_ID}/pgn` }, "Baixar PGN"),
+      ["queued", "validating"].includes(t.status)
+        ? h("button", { onclick: () => setPriority(t.priority) }, "Alterar prioridade") : null,
+      active ? h("button", { class: "danger", onclick: stopTest }, "Parar teste") : null);
+
+    fill(content,
+      h("h1", {}, `#${t.test_id} ${t.name}`),
+      h("div", { class: "subtitle" }, statusBadge(t.status), " ", resultBadge(t.result),
+        active ? h("span", { class: "muted" }, " · atualiza a cada 10 s") : null),
+      numbers,
+      actions,
+      h("h2", {}, "Progresso"), h("div", { class: "card" }, progressBar(t.pairs)),
+      sp && sp.llr_lower !== null ? [h("h2", {}, "LLR × pares"),
+            h("div", { class: "card" }, llrChart(history, sp.llr_lower, sp.llr_upper, t.pairs.total))] : null,
+      h("h2", {}, "Pentanomial"), pentaTable(t.penta, t.pairs.valid),
+      h("h2", {}, "Engines"), engines,
+      h("h2", {}, "Parâmetros"), params,
+      h("h2", {}, "Clients"), clientsTable(clients),
+      validation.validation_log ? [h("h2", {}, "Smoke test"), h("pre", { class: "log" }, validation.validation_log)] : null);
+
+    return active;
+  }
+
+  const active = await load();
+  if (active) autoRefresh(load, 10000);
+});
+</script>
+</body>
+</html>

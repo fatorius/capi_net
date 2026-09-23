@@ -67,3 +67,7 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Opening books (baixados por scripts/download_uho.sh)
+books/*.epd
+books/*.zip

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>capi_net · testes</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js"></script>
+</head>
+<body>
+<script>
+"use strict";
+
+function testRow(t) {
+  const isSprt = t.kind === "sprt";
+  return h("tr", {},
+    h("td", { class: "num" }, h("a", { href: `/tests/${t.test_id}` }, `#${t.test_id}`)),
+    h("td", { class: "wrap" }, h("a", { href: `/tests/${t.test_id}` }, t.name)),
+    h("td", {}, statusBadge(t.status)),
+    h("td", {}, resultBadge(t.result)),
+    h("td", { class: "mono wrap" },
+      h("div", {}, `${t.candidate.ref} `, h("span", { class: "muted" }, fmt.sha(t.candidate.commit))),
+      h("div", { class: "muted" }, `vs ${t.baseline.ref} ${fmt.sha(t.baseline.commit)}`)),
+    h("td", {}, !isSprt ? h("span", { class: "muted" }, "gauntlet")
+                : t.llr === null ? h("span", { class: "muted" }, "–")
+                : [llrBar(t.llr, t.llr_lower, t.llr_upper), " ", fmt.num(t.llr)]),
+    h("td", { class: "num" }, fmt.num(t.elo, 1, true)),
+    h("td", { class: "num" }, `${fmt.int(t.pairs_valid)} / ${fmt.int(t.total_pairs)}`),
+    h("td", { class: "num" }, t.priority),
+    h("td", { class: "muted" }, fmt.ago(t.created_at)));
+}
+
+function table(tests) {
+  if (!tests.length) return h("div", { class: "empty" }, "Nenhum.");
+  return h("div", { class: "table-wrap" }, h("table", {},
+    h("thead", {}, h("tr", {},
+      h("th", { class: "num" }, "id"), h("th", {}, "nome"), h("th", {}, "status"),
+      h("th", {}, "resultado"), h("th", {}, "candidate vs baseline"), h("th", {}, "LLR"),
+      h("th", { class: "num" }, "Elo"), h("th", { class: "num" }, "pares"),
+      h("th", { class: "num" }, "prio."), h("th", {}, "criado"))),
+    h("tbody", {}, tests.map(testRow))));
+}
+
+mount("tests", (main) => {
+  const body = h("div", {});
+  main.append(
+    h("h1", {}, "Testes"),
+    h("div", { class: "subtitle" }, "SPRT e gauntlets do capizero. Atualiza sozinho a cada 10 s."),
+    body);
+
+  async function load() {
+    try {
+      const tests = await api("/api/tests?limit=200");
+      const running = tests.filter((t) => t.status === "running");
+      const queue = tests.filter((t) => t.status === "queued" || t.status === "validating");
+      const past = tests.filter((t) => !["running", "queued", "validating"].includes(t.status));
+      fill(body,
+        h("h2", {}, "Rodando"), table(running),
+        h("h2", {}, "Fila"), table(queue),
+        h("h2", {}, "Histórico"), table(past));
+    } catch (e) {
+      body.replaceChildren(errorBox(e));
+    }
+  }
+  load();
+  autoRefresh(load, 10000);
+});
+</script>
+</body>
+</html>
