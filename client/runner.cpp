@@ -47,7 +47,8 @@ std::vector<std::string> fastchess_args(const std::string& fastchess, const Engi
             "option.Threads=" + std::to_string(e.threads),
             "-openings", "file=" + epd.string(), "format=epd", "order=sequential",
             "-rounds", "1", "-games", "2", "-repeat", "-concurrency", "1",
-            "-pgnout", "file=" + pgn.string(), "notation=san", "append=false",
+            "-pgnout", "file=" + pgn.string(), "notation=san", "append=false", "nodes=true",
+            "nps=true",
             "-event", event, "-ratinginterval", "0"};
     const auto adj = adjudication_args(e.adjudication);
     args.insert(args.end(), adj.begin(), adj.end());
@@ -94,6 +95,12 @@ json make_result_body(std::int64_t client_id, const std::string& pgn,
             g["ply_count"] = p->ply_count ? json(*p->ply_count) : json(nullptr);
             g["duration_ms"] = p->duration_ms ? json(*p->duration_ms) : json(nullptr);
             g["pgn"] = p->text;
+            auto usage = [&](const std::optional<EngineUsage>& u, const char* who) {
+                g[std::string(who) + "_nodes"] = u ? json(u->nodes) : json(nullptr);
+                g[std::string(who) + "_time_ms"] = u ? json(u->time_ms) : json(nullptr);
+            };
+            usage(p->candidate_usage, "candidate");
+            usage(p->baseline_usage, "baseline");
         } else {
             const auto& other = parsed[1 - i];
             g["candidate_is_white"] = other ? !other->candidate_is_white : i == 0;

@@ -91,7 +91,10 @@ def game(i, outcome, termination="normal", ply=80):
             "termination": termination, "ply_count": ply, "duration_ms": 1500,
             "cpu_factor": 1.0, "tc_base_effective_ms": 10000,
             "tc_increment_effective_ms": 100, "slot_index": 0, "core_id": 2,
-            "pgn": PGN.format(r="1/2-1/2")}
+            "pgn": PGN.format(r="1/2-1/2"),
+            # candidate a 2 M nós/s, baseline a 1 M nós/s
+            "candidate_nodes": 2_000_000, "candidate_time_ms": 1000,
+            "baseline_nodes": 1_000_000, "baseline_time_ms": 1000}
 
 
 def submit(pair_id, client_id, o0, o1, **kw):
@@ -423,6 +426,24 @@ def main(server_bin):
         check(st == 200 and len(cl) == 8 and sum(c["pairs_completed"] for c in cl) == 200 and
               all(c["fastchess_version"] == "fastchess alpha 1.8.2 test" for c in cl),
               "clients do teste: 8, somando 200 pares, com versão do fastchess")
+
+        st, sp = call("GET", f"/api/tests/{t3}/speed")
+        check(st == 200 and sp["games"] == 400 and abs(sp["candidate_nps"] - 2e6) < 1 and
+              abs(sp["baseline_nps"] - 1e6) < 1 and abs(sp["ratio"] - 2.0) < 1e-9,
+              "velocidade do teste: candidate 2 M vs baseline 1 M nós/s (ratio 2.0)")
+        check(all(abs(c["nps"] - 1.5e6) < 1 for c in cl), "NPS por client no teste: 1,5 M nós/s")
+        st, allc = call("GET", "/api/clients")
+        w = [c for c in allc if c["name"].startswith("w")]
+        check(st == 200 and len(w) == 8 and all(abs(c["nps"] - 1.5e6) < 1 and c["nps_games"] > 0
+                                                 for c in w),
+              "/api/clients: NPS recente de cada client")
+        st, _, body = raw("/clients")
+        check(st == 200 and "capi_net · clients" in body, "GET /clients")
+        bad_game = game(0, "draw")
+        bad_game["candidate_nodes"] = -5
+        check(call("POST", f"/api/jobs/{a}/result",
+                   {"client_id": c1, "games": [bad_game, game(1, "draw")]})[0] == 400,
+              "contagem de nós negativa -> 400")
 
         gid = int(psql(f"SELECT min(id) FROM games WHERE test_id = {t3}"))
         st, _, body = raw(f"/api/tests/{t3}/games/{gid}/pgn")

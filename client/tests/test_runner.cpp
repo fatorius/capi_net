@@ -59,6 +59,7 @@ TEST_CASE("fastchess command plays one pair, sequentially, without -concurrency 
     const auto rounds = std::find(args.begin(), args.end(), "-rounds");
     CHECK(*(rounds + 1) == "1");
     CHECK_FALSE(has("-use-affinity"));  // a afinidade é do client, não do fastchess
+    CHECK(has("nodes=true"));           // NPS por engine sai dos comentários do PGN
 }
 
 TEST_CASE("adjudication rules become fastchess flags") {
@@ -98,6 +99,18 @@ TEST_CASE("result body from a real fastchess pair") {
     CHECK(g[0]["slot_index"] == 1);
     CHECK(g[0]["tc_base_effective_ms"] == 10000);
     CHECK(g[0]["pgn"].get<std::string>().starts_with("[Event "));
+    CHECK(g[0]["candidate_nodes"].is_null());  // PGN sem n=
+}
+
+TEST_CASE("result body carries per-engine nodes and search time") {
+    const auto body = make_result_body(1, fixture("fastchess_pair_nodes.pgn"), "", SlotInfo{0, 2},
+                                       {4000, 40}, 1.0);
+    for (const auto& g : body["games"]) {
+        CHECK(g["candidate_nodes"].get<long long>() > 0);
+        CHECK(g["candidate_time_ms"].get<long long>() > 0);
+        CHECK(g["baseline_nodes"].get<long long>() > 0);
+        CHECK(g["baseline_time_ms"].get<long long>() > 0);
+    }
 }
 
 TEST_CASE("missing games become crash records, never silently dropped") {

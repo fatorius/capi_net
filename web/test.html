@@ -100,7 +100,8 @@ function clientsTable(clients) {
     h("thead", {}, h("tr", {},
       h("th", {}, "client"), h("th", {}, "CPU"), h("th", {}, "modo"), h("th", { class: "num" }, "slots"),
       h("th", { class: "num" }, "pares"), h("th", { class: "num" }, "em jogo"),
-      h("th", { class: "num" }, "inválidas"), h("th", {}, "fastchess"), h("th", {}, "visto"))),
+      h("th", { class: "num" }, "inválidas"), h("th", { class: "num", title: "nós/s das duas engines nas partidas deste teste" }, "NPS"),
+      h("th", {}, "fastchess"), h("th", {}, "visto"))),
     h("tbody", {}, clients.map((c) => h("tr", {},
       h("td", {}, h("span", { class: c.online ? "good" : "muted" }, "● "), c.name,
         c.status === "banned" ? [" ", h("span", { class: "badge rejected" }, "banido")] : null),
@@ -110,6 +111,7 @@ function clientsTable(clients) {
       h("td", { class: "num" }, fmt.int(c.pairs_completed)),
       h("td", { class: "num" }, fmt.int(c.pairs_leased)),
       h("td", { class: "num" + (c.games_invalid ? " bad" : "") }, fmt.int(c.games_invalid)),
+      h("td", { class: "num" }, fmt.nps(c.nps)),
       h("td", { class: "mono muted" }, c.fastchess_version || "–"),
       h("td", { class: "muted" }, fmt.ago(c.last_seen)))))));
 }
@@ -135,13 +137,14 @@ mount("tests", async (main) => {
   }
 
   async function load() {
-    let t, history, clients, validation;
+    let t, history, clients, validation, speed;
     try {
-      [t, history, clients, validation] = await Promise.all([
+      [t, history, clients, validation, speed] = await Promise.all([
         api(`/api/tests/${TEST_ID}/stats`),
         api(`/api/tests/${TEST_ID}/history`),
         api(`/api/tests/${TEST_ID}/clients`),
         api(`/api/admin/tests/${TEST_ID}/validation`),
+        api(`/api/tests/${TEST_ID}/speed`),
       ]);
     } catch (e) {
       content.replaceChildren(errorBox(e));
@@ -188,6 +191,13 @@ mount("tests", async (main) => {
         h("div", { class: "big" }, fmt.num(sp.llr, 2)),
         h("div", {}, llrBar(sp.llr, sp.llr_lower, sp.llr_upper), " ",
           h("span", { class: "muted" }, `[${fmt.num(sp.llr_lower)}, ${fmt.num(sp.llr_upper)}]`))) : null,
+      h("div", { class: "card", title: "nós/s medidos nas partidas válidas deste teste" },
+        h("div", { class: "muted" }, "Velocidade (candidate vs baseline)"),
+        h("div", { class: "big" }, speed.ratio === null ? "–"
+          : `${speed.ratio >= 1 ? "+" : ""}${((speed.ratio - 1) * 100).toFixed(1)}%`),
+        h("div", { class: "muted" },
+          `${fmt.nps(speed.candidate_nps)} vs ${fmt.nps(speed.baseline_nps)} nós/s` +
+          (speed.games ? ` · ${fmt.int(speed.games)} partidas` : ""))),
       h("div", { class: "card" },
         h("div", { class: "muted" }, "Pares válidos"),
         h("div", { class: "big" }, fmt.int(t.pairs.valid)),

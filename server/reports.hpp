@@ -29,8 +29,33 @@ struct TestClient {
     int pairs_completed, games_invalid, pairs_leased;
     std::string last_seen;
     bool online;  // heartbeat nos últimos 2 minutos
+    std::optional<double> nps;  // nós/s das duas engines nas partidas deste teste
 };
 std::vector<TestClient> test_clients(pqxx::connection& conn, std::int64_t test_id);
+
+// Todos os clients, online primeiro, com o NPS das últimas `recent_games`
+// partidas (de qualquer teste) medido nas próprias partidas.
+struct ClientSummary {
+    std::int64_t client_id;
+    std::string name, status, pinning_mode;
+    std::optional<std::string> cpu_model, core_topology, arch_target, fastchess_version, os;
+    int slots;
+    std::string last_seen;
+    bool online;
+    int pairs_leased;               // em jogo agora
+    std::int64_t games_total;
+    std::optional<double> nps;      // média das últimas `recent_games` partidas
+    int nps_games;                  // quantas partidas entraram na média
+    std::optional<std::string> last_game_at;
+};
+std::vector<ClientSummary> all_clients(pqxx::connection& conn, int recent_games);
+
+// Velocidade das engines no teste (partidas válidas com contagem de nós).
+struct TestSpeed {
+    std::optional<double> candidate_nps, baseline_nps;
+    std::int64_t games = 0;
+};
+TestSpeed test_speed(pqxx::connection& conn, std::int64_t test_id);
 
 // PGN (descomprimido) de uma partida do teste.
 std::optional<std::string> game_pgn(pqxx::connection& conn, std::int64_t test_id,

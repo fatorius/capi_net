@@ -101,6 +101,7 @@ dl.kv { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; ma
 dl.kv dt { color: var(--muted); }
 dl.kv dd { margin: 0; overflow-wrap: anywhere; }
 
+.big-num { font-weight: 600; }
 .big { font-size: 26px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .muted { color: var(--muted); }
 .good { color: var(--good); } .bad { color: var(--bad); }

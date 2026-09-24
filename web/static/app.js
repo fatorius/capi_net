@@ -57,6 +57,13 @@ const fmt = {
     return sign && v > 0 ? "+" + s : s;
   },
   int(v) { return v === null || v === undefined ? "–" : v.toLocaleString("pt-BR"); },
+  // nós por segundo: "7,02 M", "850 k"
+  nps(v) {
+    if (v === null || v === undefined) return "–";
+    if (v >= 1e6) return `${(v / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 2, minimumFractionDigits: 2 })} M`;
+    if (v >= 1e3) return `${Math.round(v / 1e3).toLocaleString("pt-BR")} k`;
+    return String(Math.round(v));
+  },
   date(iso) {
     if (!iso) return "–";
     const d = new Date(iso);
@@ -109,7 +116,8 @@ function header(active) {
     h("a", { href, class: active === key ? "active" : null }, label);
   return h("header", { class: "top" },
     h("a", { class: "brand", href: "/tests" }, "capi_net"),
-    h("nav", {}, link("/tests", "Testes", "tests"), link("/tests/new", "Novo teste", "new")));
+    h("nav", {}, link("/tests", "Testes", "tests"), link("/clients", "Clients", "clients"),
+      link("/tests/new", "Novo teste", "new")));
 }
 
 function mount(active, build) {

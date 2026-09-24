@@ -210,16 +210,19 @@ SubmitResult submit_result(pqxx::connection& conn, std::int64_t pair_id,
             INSERT INTO games (pair_id, test_id, client_id, slot_index, core_id, game_in_pair,
                                candidate_is_white, outcome, termination, ply_count, duration_ms,
                                cpu_factor_at_play, tc_base_effective_ms,
-                               tc_increment_effective_ms, valid, invalid_reason)
+                               tc_increment_effective_ms, valid, invalid_reason,
+                               candidate_nodes, candidate_time_ms, baseline_nodes,
+                               baseline_time_ms)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8::game_outcome, $9::game_termination,
-                    $10, $11, $12, $13, $14, $15, $16)
+                    $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)
             RETURNING id)",
             pqxx::params{pair_id, test_id, report.client_id, game.slot_index, game.core_id,
                          game.game_in_pair, game.candidate_is_white, game.outcome,
                          game.termination, game.ply_count, game.duration_ms,
                          game.cpu_factor_at_play, game.tc_base_effective_ms,
                          game.tc_increment_effective_ms, v.valid,
-                         v.valid ? std::optional<std::string>{} : v.reason});
+                         v.valid ? std::optional<std::string>{} : v.reason, game.candidate_nodes,
+                         game.candidate_time_ms, game.baseline_nodes, game.baseline_time_ms});
 
         const auto gz = gzip_compress(game.pgn);
         tx.exec("INSERT INTO game_pgns (game_id, pgn_gz) VALUES ($1, $2)",

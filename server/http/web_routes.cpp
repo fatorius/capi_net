@@ -49,6 +49,9 @@ void register_web_routes(httplib::Server& svr, db::ConnectionPool& pool, const S
     svr.Get("/tests", [web](const httplib::Request&, httplib::Response& res) {
         serve_page(res, web / "tests.html");
     });
+    svr.Get("/clients", [web](const httplib::Request&, httplib::Response& res) {
+        serve_page(res, web / "clients.html");
+    });
     svr.Get("/tests/new", [web](const httplib::Request&, httplib::Response& res) {
         serve_page(res, web / "new.html");
     });
@@ -128,9 +131,54 @@ void register_web_routes(httplib::Server& svr, db::ConnectionPool& pool, const S
                            {"games_invalid", c.games_invalid},
                            {"pairs_leased", c.pairs_leased},
                            {"last_seen", c.last_seen},
-                           {"online", c.online}});
+                           {"online", c.online},
+                           {"nps", nullable(c.nps)}});
         }
         send_json(res, 200, out);
+    }));
+
+    svr.Get("/api/clients", guarded([&pool](const httplib::Request&, httplib::Response& res) {
+        auto conn = pool.acquire();
+        json out = json::array();
+        for (const auto& c : all_clients(*conn, 200)) {
+            out.push_back({{"client_id", c.client_id},
+                           {"name", c.name},
+                           {"status", c.status},
+                           {"pinning_mode", c.pinning_mode},
+                           {"cpu_model", nullable(c.cpu_model)},
+                           {"core_topology", nullable(c.core_topology)},
+                           {"arch_target", nullable(c.arch_target)},
+                           {"fastchess_version", nullable(c.fastchess_version)},
+                           {"os", nullable(c.os)},
+                           {"slots", c.slots},
+                           {"last_seen", c.last_seen},
+                           {"online", c.online},
+                           {"pairs_leased", c.pairs_leased},
+                           {"games_total", c.games_total},
+                           {"nps", nullable(c.nps)},
+                           {"nps_games", c.nps_games},
+                           {"last_game_at", nullable(c.last_game_at)}});
+        }
+        send_json(res, 200, out);
+    }));
+
+    svr.Get(R"(/api/tests/(\d+)/speed)",
+            guarded([&pool](const httplib::Request& req, httplib::Response& res) {
+        const auto id = path_id(req);
+        auto conn = pool.acquire();
+        if (!test_exists(*conn, id)) {
+            send_error(res, 404, "test_not_found");
+            return;
+        }
+        const auto s = test_speed(*conn, id);
+        json body{{"candidate_nps", nullable(s.candidate_nps)},
+                  {"baseline_nps", nullable(s.baseline_nps)},
+                  {"games", s.games},
+                  {"ratio", nullptr}};
+        if (s.candidate_nps && s.baseline_nps && *s.baseline_nps > 0) {
+            body["ratio"] = *s.candidate_nps / *s.baseline_nps;
+        }
+        send_json(res, 200, body);
     }));
 
     svr.Get(R"(/api/tests/(\d+)/games/(\d+)/pgn)",

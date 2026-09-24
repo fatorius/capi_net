@@ -1,5 +1,6 @@
 #include "client/pgn.hpp"
 
+#include <cmath>
 #include <cstdint>
 #include <regex>
 #include <sstream>
@@ -67,6 +68,39 @@ std::optional<int> parse_duration(const std::string& s) {
     return static_cast<int>(ms);
 }
 
+ColorUsage usage_by_color(const std::string& game_pgn, bool white_first) {
+    // Lances ficam depois da linha em branco que encerra as tags.
+    const auto body_start = game_pgn.find("\n\n");
+    if (body_start == std::string::npos) return {};
+    static const std::regex time_re(R"(\s(\d+(?:\.\d+)?)s\b)");
+    static const std::regex nodes_re(R"(\bn=(\d+))");
+
+    EngineUsage side[2];
+    bool seen[2] = {false, false};
+    bool white_to_move = white_first;
+    std::size_t pos = body_start;
+    while ((pos = game_pgn.find('{', pos)) != std::string::npos) {
+        const auto end = game_pgn.find('}', pos);
+        if (end == std::string::npos) break;
+        const std::string comment = game_pgn.substr(pos, end - pos);
+        pos = end + 1;
+
+        std::smatch t, n;
+        const int i = white_to_move ? 0 : 1;
+        white_to_move = !white_to_move;  // um comentário por lance
+        if (!std::regex_search(comment, n, nodes_re) || !std::regex_search(comment, t, time_re)) {
+            continue;
+        }
+        side[i].nodes += std::stoll(n[1].str());
+        side[i].time_ms += std::llround(std::stod(t[1].str()) * 1000.0);
+        seen[i] = true;
+    }
+    ColorUsage out;
+    if (seen[0]) out.white = side[0];
+    if (seen[1]) out.black = side[1];
+    return out;
+}
+
 std::optional<ParsedGame> parse_game(const std::string& game_pgn,
                                      const std::string& candidate_name) {
     ParsedGame g;
@@ -96,6 +130,17 @@ std::optional<ParsedGame> parse_game(const std::string& game_pgn,
         }
     }
     if (g.tags.contains("GameDuration")) g.duration_ms = parse_duration(g.tags["GameDuration"]);
+
+    // Quem abre: o lado a mover na FEN inicial (2º campo); sem FEN, brancas.
+    bool white_first = true;
+    if (g.tags.contains("FEN")) {
+        const auto& fen = g.tags["FEN"];
+        const auto sp = fen.find(' ');
+        white_first = !(sp != std::string::npos && sp + 1 < fen.size() && fen[sp + 1] == 'b');
+    }
+    const auto usage = usage_by_color(game_pgn, white_first);
+    g.candidate_usage = g.candidate_is_white ? usage.white : usage.black;
+    g.baseline_usage = g.candidate_is_white ? usage.black : usage.white;
     return g;
 }
 

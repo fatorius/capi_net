@@ -81,3 +81,43 @@ TEST_CASE("empty or garbage PGN yields no games") {
     CHECK(split_pgn_games("").empty());
     CHECK(split_pgn_games("garbage\n").empty());
 }
+
+TEST_CASE("nodes and search time per engine from fastchess comments") {
+    // Formato real do fastchess 1.8.2 com -pgnout nodes=true nps=true.
+    const auto games = split_pgn_games(fixture("fastchess_pair_nodes.pgn"));
+    REQUIRE(games.size() == 2);
+    for (const auto& text : games) {
+        const auto g = parse_game(text, "candidate");
+        REQUIRE(g);
+        REQUIRE(g->candidate_usage);
+        REQUIRE(g->baseline_usage);
+        CHECK(g->candidate_usage->nodes > 0);
+        CHECK(g->candidate_usage->time_ms > 0);
+        const double nps = 1000.0 * g->candidate_usage->nodes / g->candidate_usage->time_ms;
+        CHECK(nps > 1e5);   // capizero faz milhões de nós/s
+        CHECK(nps < 1e9);
+    }
+}
+
+TEST_CASE("usage sums alternate sides starting from the FEN side to move") {
+    const std::string pgn =
+        "[Event \"x\"]\n[White \"candidate\"]\n[Black \"baseline\"]\n[Result \"1/2-1/2\"]\n"
+        "[FEN \"8/8/8/8/8/8/8/K6k b - - 0 1\"]\n\n"
+        "1... Kg1 {+0.00/5 0.500s, n=1000, nps=2000} 2. Kb1 {+0.00/5 0.250s, n=300, nps=1200}\n"
+        "Kh1 {0.00/4 0.100s, n=100, nps=1000, Draw by 3-fold repetition} 1/2-1/2\n";
+    const auto g = parse_game(pgn, "candidate");
+    REQUIRE(g);
+    // Pretas abrem: comentários 1 e 3 são das pretas (baseline), o 2 é das brancas.
+    CHECK(g->baseline_usage->nodes == 1100);
+    CHECK(g->baseline_usage->time_ms == 600);
+    CHECK(g->candidate_usage->nodes == 300);
+    CHECK(g->candidate_usage->time_ms == 250);
+}
+
+TEST_CASE("PGN without node counts has no usage") {
+    const auto games = split_pgn_games(fixture("fastchess_pair.pgn"));
+    const auto g = parse_game(games[0], "candidate");
+    REQUIRE(g);
+    CHECK_FALSE(g->candidate_usage);
+    CHECK_FALSE(g->baseline_usage);
+}

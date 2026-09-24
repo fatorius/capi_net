@@ -35,7 +35,9 @@ std::vector<TestClient> test_clients(pqxx::connection& conn, std::int64_t test_i
         WITH played AS (
             SELECT client_id,
                    count(DISTINCT pair_id)             AS pairs,
-                   count(*) FILTER (WHERE NOT valid)   AS invalid
+                   count(*) FILTER (WHERE NOT valid)   AS invalid,
+                   sum(candidate_nodes + baseline_nodes)::float8
+                     / NULLIF(sum(candidate_time_ms + baseline_time_ms), 0) * 1000 AS nps
             FROM games WHERE test_id = $1 GROUP BY client_id
         ),
         leased AS (
@@ -45,7 +47,8 @@ std::vector<TestClient> test_clients(pqxx::connection& conn, std::int64_t test_i
         SELECT c.id, c.name, c.status::text, c.pinning_mode::text, c.cpu_model,
                c.core_topology, c.cpu_arch_target, c.fastchess_version, c.slots, c.cpu_factor,
                COALESCE(p.pairs, 0), COALESCE(p.invalid, 0), COALESCE(l.n, 0),
-               to_json(c.last_seen) #>> '{}', c.last_seen > now() - interval '2 minutes'
+               to_json(c.last_seen) #>> '{}', c.last_seen > now() - interval '2 minutes',
+               p.nps
         FROM clients c
         LEFT JOIN played p ON p.client_id = c.id
         LEFT JOIN leased l ON l.client_id = c.id
@@ -59,9 +62,58 @@ std::vector<TestClient> test_clients(pqxx::connection& conn, std::int64_t test_i
                        opt<std::string>(row[4]), opt<std::string>(row[5]),
                        opt<std::string>(row[6]), opt<std::string>(row[7]), row[8].as<int>(),
                        opt<double>(row[9]), row[10].as<int>(), row[11].as<int>(),
-                       row[12].as<int>(), row[13].as<std::string>(), row[14].as<bool>()});
+                       row[12].as<int>(), row[13].as<std::string>(), row[14].as<bool>(),
+                       opt<double>(row[15])});
     }
     return out;
+}
+
+std::vector<ClientSummary> all_clients(pqxx::connection& conn, int recent_games) {
+    pqxx::read_transaction tx{conn};
+    const auto r = tx.exec(R"(
+        SELECT c.id, c.name, c.status::text, c.pinning_mode::text, c.cpu_model, c.core_topology,
+               c.cpu_arch_target, c.fastchess_version, c.os, c.slots,
+               to_json(c.last_seen) #>> '{}', c.last_seen > now() - interval '2 minutes',
+               (SELECT count(*) FROM job_pairs jp WHERE jp.leased_to = c.id AND jp.status = 'leased'),
+               (SELECT count(*) FROM games g WHERE g.client_id = c.id),
+               recent.nps, recent.n, to_json(recent.last_at) #>> '{}'
+        FROM clients c
+        CROSS JOIN LATERAL (
+            SELECT sum(candidate_nodes + baseline_nodes)::float8
+                     / NULLIF(sum(candidate_time_ms + baseline_time_ms), 0) * 1000 AS nps,
+                   count(candidate_nodes + baseline_nodes) AS n,
+                   max(created_at) AS last_at
+            FROM (SELECT candidate_nodes, baseline_nodes, candidate_time_ms, baseline_time_ms,
+                         created_at
+                  FROM games g WHERE g.client_id = c.id
+                  ORDER BY g.id DESC LIMIT $1) last_games) recent
+        ORDER BY c.last_seen > now() - interval '2 minutes' DESC, c.last_seen DESC)",
+                           pqxx::params{recent_games});
+    std::vector<ClientSummary> out;
+    for (const auto& row : r) {
+        out.push_back({row[0].as<std::int64_t>(), row[1].as<std::string>(),
+                       row[2].as<std::string>(), row[3].as<std::string>(),
+                       opt<std::string>(row[4]), opt<std::string>(row[5]),
+                       opt<std::string>(row[6]), opt<std::string>(row[7]),
+                       opt<std::string>(row[8]), row[9].as<int>(), row[10].as<std::string>(),
+                       row[11].as<bool>(), row[12].as<int>(), row[13].as<std::int64_t>(),
+                       opt<double>(row[14]), row[15].as<int>(), opt<std::string>(row[16])});
+    }
+    return out;
+}
+
+TestSpeed test_speed(pqxx::connection& conn, std::int64_t test_id) {
+    pqxx::read_transaction tx{conn};
+    const auto r = tx.exec(R"(
+        SELECT sum(candidate_nodes)::float8 / NULLIF(sum(candidate_time_ms), 0) * 1000,
+               sum(baseline_nodes)::float8 / NULLIF(sum(baseline_time_ms), 0) * 1000,
+               count(*)
+        FROM games
+        WHERE test_id = $1 AND valid
+          AND candidate_nodes IS NOT NULL AND candidate_time_ms IS NOT NULL
+          AND baseline_nodes IS NOT NULL AND baseline_time_ms IS NOT NULL)",
+                           pqxx::params{test_id});
+    return {opt<double>(r[0][0]), opt<double>(r[0][1]), r[0][2].as<std::int64_t>()};
 }
 
 std::optional<std::string> game_pgn(pqxx::connection& conn, std::int64_t test_id,

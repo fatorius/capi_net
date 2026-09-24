@@ -35,6 +35,8 @@ struct GameReport {
     int slot_index = 0;
     std::optional<int> core_id;
     std::string pgn;                // texto puro; o server comprime
+    // Nós e tempo de busca somados por engine (NPS = nodes / time).
+    std::optional<long long> candidate_nodes, candidate_time_ms, baseline_nodes, baseline_time_ms;
 };
 
 // Par completo: games[i].game_in_pair == i.

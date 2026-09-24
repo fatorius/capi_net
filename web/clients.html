@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>capi_net · clients</title>
+  <link rel="stylesheet" href="/static/app.css">
+  <script src="/static/app.js"></script>
+</head>
+<body>
+<script>
+"use strict";
+
+function clientRow(c) {
+  return h("tr", {},
+    h("td", {}, h("span", { class: c.online ? "good" : "muted", title: c.online ? "conectado" : "desconectado" }, "● "),
+      c.name, c.status === "banned" ? [" ", h("span", { class: "badge rejected" }, "banido")] : null),
+    h("td", { class: "num big-num" }, fmt.nps(c.nps)),
+    h("td", { class: "num muted" }, c.nps_games ? fmt.int(c.nps_games) : "–"),
+    h("td", { class: "num" }, fmt.int(c.pairs_leased)),
+    h("td", { class: "num" }, c.slots),
+    h("td", { class: "wrap", title: c.core_topology || "" }, c.cpu_model || "–",
+      h("div", { class: "muted" }, c.core_topology || "")),
+    h("td", { class: "mono" }, c.pinning_mode),
+    h("td", { class: "num" }, fmt.int(c.games_total)),
+    h("td", { class: "mono muted" }, c.fastchess_version || "–"),
+    h("td", { class: "muted" }, fmt.ago(c.last_seen)));
+}
+
+mount("clients", (main) => {
+  const body = h("div", {});
+  main.append(
+    h("h1", {}, "Clients"),
+    h("div", { class: "subtitle" },
+      "NPS medido nas próprias partidas (nós/s das duas engines, últimas 200 partidas de cada client). " +
+      "Conectado = heartbeat nos últimos 2 minutos. Atualiza a cada 10 s."),
+    body);
+
+  async function load() {
+    try {
+      const clients = await api("/api/clients");
+      if (!clients.length) {
+        fill(body, h("div", { class: "empty" }, "Nenhum client registrado."));
+        return;
+      }
+      fill(body, h("div", { class: "table-wrap" }, h("table", {},
+        h("thead", {}, h("tr", {},
+          h("th", {}, "client"), h("th", { class: "num" }, "NPS"),
+          h("th", { class: "num", title: "partidas usadas na média de NPS" }, "partidas (NPS)"),
+          h("th", { class: "num" }, "em jogo"), h("th", { class: "num" }, "slots"), h("th", {}, "CPU"),
+          h("th", {}, "modo"), h("th", { class: "num" }, "partidas (total)"), h("th", {}, "fastchess"),
+          h("th", {}, "visto"))),
+        h("tbody", {}, clients.map(clientRow)))));
+    } catch (e) {
+      fill(body, errorBox(e));
+    }
+  }
+  load();
+  autoRefresh(load, 10000);
+});
+</script>
+</body>
+</html>

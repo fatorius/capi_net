@@ -34,6 +34,17 @@ GameReport parse_game(const json& g) {
     r.slot_index = req_int(g, "slot_index", 0);
     r.core_id = opt_int(g, "core_id", 0);
     r.pgn = req_string(g, "pgn");
+    auto opt_count = [&](const char* key) -> std::optional<long long> {
+        if (!g.contains(key) || g[key].is_null()) return std::nullopt;
+        if (!g[key].is_number_integer() || g[key].get<long long>() < 0) {
+            throw BadRequest(std::string(key) + " must be a non-negative integer");
+        }
+        return g[key].get<long long>();
+    };
+    r.candidate_nodes = opt_count("candidate_nodes");
+    r.candidate_time_ms = opt_count("candidate_time_ms");
+    r.baseline_nodes = opt_count("baseline_nodes");
+    r.baseline_time_ms = opt_count("baseline_time_ms");
     return r;
 }
 

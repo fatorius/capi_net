@@ -22,7 +22,7 @@ using namespace capi::server;
 
 namespace {
 
-constexpr int kRequiredSchemaVersion = 3;
+constexpr int kRequiredSchemaVersion = 4;
 
 // Tarefas periódicas (§5.1 passo 6, §5.4): recuperação de leases expirados e
 // promoção do próximo teste da fila.
