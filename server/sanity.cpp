@@ -2,6 +2,12 @@
 
 namespace capi::server {
 
+std::int64_t max_plausible_duration_ms(int tc_base_ms, int tc_increment_ms, int ply_count) {
+    const std::int64_t clocks =
+        2LL * tc_base_ms + static_cast<std::int64_t>(tc_increment_ms) * ply_count;
+    return clocks + clocks / 4 + 5000;
+}
+
 namespace {
 
 GameVerdict check_game(const GameReport& g) {
@@ -10,6 +16,11 @@ GameVerdict check_game(const GameReport& g) {
     }
     if (!g.ply_count || *g.ply_count <= 0 || *g.ply_count > kMaxPlyCount) {
         return {false, "ply_count_out_of_range"};
+    }
+    if (!g.duration_ms || *g.duration_ms < 0) return {false, "duration_missing"};
+    if (*g.duration_ms > max_plausible_duration_ms(g.tc_base_effective_ms,
+                                                    g.tc_increment_effective_ms, *g.ply_count)) {
+        return {false, "duration_implausible"};
     }
     return {};
 }

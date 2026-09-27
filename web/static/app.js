@@ -85,7 +85,17 @@ const STATUS_LABEL = {
 };
 const RESULT_LABEL = {
   pending: "pendente", accepted: "aceito", rejected: "rejeitado", inconclusive: "inconclusivo",
+  completed: "concluído",
 };
+
+// Placar do candidate: "V 9714 · E 10365 · D 9898" e pontos em %.
+function scoreText(sc) {
+  if (!sc || !sc.games) return "–";
+  return `+${fmt.int(sc.wins)} =${fmt.int(sc.draws)} −${fmt.int(sc.losses)}`;
+}
+function scorePct(sc) {
+  return !sc || sc.pct === null || sc.pct === undefined ? "–" : `${sc.pct.toFixed(1)}%`;
+}
 
 function statusBadge(status) {
   return h("span", { class: `badge ${status}` }, STATUS_LABEL[status] || status);

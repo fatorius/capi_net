@@ -191,6 +191,12 @@ mount("tests", async (main) => {
         h("div", { class: "big" }, fmt.num(sp.llr, 2)),
         h("div", {}, llrBar(sp.llr, sp.llr_lower, sp.llr_upper), " ",
           h("span", { class: "muted" }, `[${fmt.num(sp.llr_lower)}, ${fmt.num(sp.llr_upper)}]`))) : null,
+      h("div", { class: "card", title: "pontos do candidate: vitória = 1, empate = ½" },
+        h("div", { class: "muted" }, "Placar do candidate"),
+        h("div", { class: "big" }, scorePct(t.score)),
+        h("div", { class: "muted" }, t.score.games
+          ? `${scoreText(t.score)} · ${fmt.num(t.score.points, 1)} / ${fmt.int(t.score.games)} pontos`
+          : "sem partidas ainda")),
       h("div", { class: "card", title: "nós/s medidos nas partidas válidas deste teste" },
         h("div", { class: "muted" }, "Velocidade (candidate vs baseline)"),
         h("div", { class: "big" }, speed.ratio === null ? "–"

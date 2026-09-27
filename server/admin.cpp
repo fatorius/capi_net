@@ -72,7 +72,8 @@ std::vector<TestSummary> list_tests(pqxx::connection& conn, int limit) {
                t.candidate_ref, t.candidate_commit, t.baseline_ref, t.baseline_commit,
                t.priority, t.total_pairs, COALESCE(s.pairs_valid, 0),
                s.llr, s.llr_lower, s.llr_upper, s.elo,
-               to_json(t.created_at) #>> '{}'
+               to_json(t.created_at) #>> '{}',
+               COALESCE(s.games_wins, 0), COALESCE(s.games_draws, 0), COALESCE(s.games_losses, 0)
         FROM tests t
         LEFT JOIN test_stats s ON s.test_id = t.id
         ORDER BY CASE t.status WHEN 'running' THEN 0
@@ -92,7 +93,8 @@ std::vector<TestSummary> list_tests(pqxx::connection& conn, int limit) {
                        row[6].as<std::string>(), row[7].as<std::string>(),
                        row[8].as<std::string>(), row[9].as<int>(), row[10].as<int>(),
                        row[11].as<int>(), opt<double>(row[12]), opt<double>(row[13]),
-                       opt<double>(row[14]), opt<double>(row[15]), row[16].as<std::string>()});
+                       opt<double>(row[14]), opt<double>(row[15]), row[16].as<std::string>(),
+                       row[17].as<int>(), row[18].as<int>(), row[19].as<int>()});
     }
     return out;
 }

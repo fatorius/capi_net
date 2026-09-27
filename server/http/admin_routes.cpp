@@ -151,6 +151,7 @@ void register_admin_routes(httplib::Server& svr, db::ConnectionPool& pool, const
                            {"llr_lower", nullable(t.llr_lower)},
                            {"llr_upper", nullable(t.llr_upper)},
                            {"elo", nullable(t.elo)},
+                           {"score", score_json(t.wins, t.draws, t.losses)},
                            {"created_at", t.created_at}});
         }
         send_json(res, 200, out);

@@ -155,4 +155,16 @@ inline json adjudication_json(const Adjudication& a) {
     return out;
 }
 
+// Placar do candidate: vitórias, empates, derrotas, pontos (V + E/2) e %.
+inline json score_json(int wins, int draws, int losses) {
+    const int games = wins + draws + losses;
+    const double points = wins + 0.5 * draws;
+    return {{"wins", wins},
+            {"draws", draws},
+            {"losses", losses},
+            {"games", games},
+            {"points", points},
+            {"pct", games ? json(100.0 * points / games) : json(nullptr)}};
+}
+
 }  // namespace capi::server::http

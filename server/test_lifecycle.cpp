@@ -40,7 +40,6 @@ void refresh_test(pqxx::work& tx, std::int64_t test_id) {
     if (t.empty()) return;
     const auto kind = t[0][0].as<std::string>();
     const auto status = t[0][1].as<std::string>();
-    const auto current_result = t[0][2].as<std::string>();
 
     st::Pentanomial penta;
     for (const auto& row : tx.exec(R"(
@@ -49,6 +48,18 @@ void refresh_test(pqxx::work& tx, std::int64_t test_id) {
                                    pqxx::params{test_id})) {
         penta.add(st::category_from_pair_score(row[0].as<double>()), row[1].as<std::int64_t>());
     }
+
+    // Placar do candidate nas mesmas partidas da distribuição pentanomial.
+    const auto sc = tx.exec(R"(
+        SELECT count(*) FILTER (WHERE g.outcome = 'candidate_win'),
+               count(*) FILTER (WHERE g.outcome = 'draw'),
+               count(*) FILTER (WHERE g.outcome = 'candidate_loss')
+        FROM games g JOIN pair_outcomes po ON po.pair_id = g.pair_id
+        WHERE g.test_id = $1 AND g.valid)",
+                            pqxx::params{test_id});
+    const auto wins = sc[0][0].as<std::int64_t>();
+    const auto draws = sc[0][1].as<std::int64_t>();
+    const auto losses = sc[0][2].as<std::int64_t>();
 
     std::optional<double> elo, ci_low, ci_high, llr, llr_lower, llr_upper;
     if (penta.pairs() > 0) {
@@ -75,8 +86,9 @@ void refresh_test(pqxx::work& tx, std::int64_t test_id) {
     tx.exec(R"(
         INSERT INTO test_stats (test_id, pairs_valid, penta_ll, penta_ld, penta_dd_wl,
                                 penta_wd, penta_ww, llr, llr_lower, llr_upper,
-                                elo, elo_ci_low, elo_ci_high, updated_at)
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, now())
+                                elo, elo_ci_low, elo_ci_high, games_wins, games_draws,
+                                games_losses, updated_at)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, now())
         ON CONFLICT (test_id) DO UPDATE SET
             pairs_valid = EXCLUDED.pairs_valid,
             penta_ll = EXCLUDED.penta_ll, penta_ld = EXCLUDED.penta_ld,
@@ -84,10 +96,12 @@ void refresh_test(pqxx::work& tx, std::int64_t test_id) {
             penta_ww = EXCLUDED.penta_ww,
             llr = EXCLUDED.llr, llr_lower = EXCLUDED.llr_lower, llr_upper = EXCLUDED.llr_upper,
             elo = EXCLUDED.elo, elo_ci_low = EXCLUDED.elo_ci_low,
-            elo_ci_high = EXCLUDED.elo_ci_high, updated_at = now())",
+            elo_ci_high = EXCLUDED.elo_ci_high, games_wins = EXCLUDED.games_wins,
+            games_draws = EXCLUDED.games_draws, games_losses = EXCLUDED.games_losses,
+            updated_at = now())",
             pqxx::params{test_id, penta.pairs(), penta[P::LL], penta[P::LD], penta[P::DD_WL],
                          penta[P::WD], penta[P::WW], llr, llr_lower, llr_upper, elo, ci_low,
-                         ci_high});
+                         ci_high, wins, draws, losses});
 
     // Histórico para o gráfico LLR × pares: só quando o número de pares muda.
     tx.exec(R"(
@@ -113,8 +127,8 @@ void refresh_test(pqxx::work& tx, std::int64_t test_id) {
         "WHERE test_id = $1 AND status IN ('pending', 'leased')",
         pqxx::params{test_id});
     if (remaining == 0) {
-        // Gauntlet não tem veredito: mantém o result atual ('pending').
-        finish_test(tx, test_id, kind == "sprt" ? "inconclusive" : current_result,
+        // Gauntlet não tem veredito de SPRT: o resultado é o placar/Elo.
+        finish_test(tx, test_id, kind == "sprt" ? "inconclusive" : "completed",
                     "all pairs consumed");
     }
 }
@@ -153,7 +167,8 @@ std::optional<TestStatsSnapshot> load_test_stats(pqxx::connection& conn, std::in
                to_json(t.created_at) #>> '{}', to_json(t.started_at) #>> '{}',
                to_json(t.finished_at) #>> '{}',
                t.adj_draw_movenumber, t.adj_draw_movecount, t.adj_draw_score_cp,
-               t.adj_resign_movecount, t.adj_resign_score_cp, t.adj_resign_twosided
+               t.adj_resign_movecount, t.adj_resign_score_cp, t.adj_resign_twosided,
+               COALESCE(s.games_wins, 0), COALESCE(s.games_draws, 0), COALESCE(s.games_losses, 0)
         FROM tests t
         CROSS JOIN LATERAL (
             SELECT count(*) FILTER (WHERE status = 'pending')   AS pending,
@@ -214,6 +229,9 @@ std::optional<TestStatsSnapshot> load_test_stats(pqxx::connection& conn, std::in
         s.adjudication.resign =
             ResignAdjudication{row[43].as<int>(), row[44].as<int>(), row[45].as<bool>()};
     }
+    s.wins = row[46].as<int>();
+    s.draws = row[47].as<int>();
+    s.losses = row[48].as<int>();
     return s;
 }
 

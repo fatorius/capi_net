@@ -61,6 +61,14 @@ void register_web_routes(httplib::Server& svr, db::ConnectionPool& pool, const S
     if (!svr.set_mount_point("/static", (web / "static").string())) {
         log_warn("web UI: diretório " + (web / "static").string() + " não encontrado");
     }
+    // Sem Cache-Control o navegador reaproveita app.js/app.css antigos depois de
+    // uma atualização (as páginas já são no-cache): com no-cache ele revalida
+    // pelo ETag a cada acesso e só baixa de novo se o arquivo mudou.
+    svr.set_post_routing_handler([](const httplib::Request& req, httplib::Response& res) {
+        if (req.path.starts_with("/static/") && !res.has_header("Cache-Control")) {
+            res.set_header("Cache-Control", "no-cache");
+        }
+    });
 
     // --- dados das páginas -------------------------------------------------
     svr.Get("/api/config", guarded([&cfg](const httplib::Request&, httplib::Response& res) {

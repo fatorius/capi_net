@@ -46,6 +46,7 @@ struct TestSummary {
     int priority, total_pairs, pairs_valid;
     std::optional<double> llr, llr_lower, llr_upper, elo;
     std::string created_at;
+    int wins = 0, draws = 0, losses = 0;
 };
 // Ordem: running, depois queued/validating (fila), depois o resto (mais novos primeiro).
 std::vector<TestSummary> list_tests(pqxx::connection& conn, int limit);

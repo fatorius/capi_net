@@ -84,7 +84,7 @@ td.wrap { white-space: normal; min-width: 160px; }
 }
 .badge.running { color: var(--accent); }
 .badge.queued, .badge.validating { color: var(--warn); }
-.badge.accepted { color: var(--good); }
+.badge.accepted, .badge.completed { color: var(--good); }
 .badge.rejected, .badge.invalid { color: var(--bad); }
 .badge.finished, .badge.stopped, .badge.inconclusive, .badge.pending { color: var(--neutral); }
 

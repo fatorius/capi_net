@@ -232,6 +232,7 @@ void register_routes(httplib::Server& svr, db::ConnectionPool& pool, const Serve
             {"started_at", nullable(s->started_at)},
             {"finished_at", nullable(s->finished_at)},
             {"adjudication", adjudication_json(s->adjudication)},
+            {"score", score_json(s->wins, s->draws, s->losses)},
             {"pairs",
              {{"total", s->total_pairs},
               {"valid", s->penta.pairs()},

@@ -41,6 +41,7 @@ struct TestStatsSnapshot {
     std::string created_at;
     std::optional<std::string> started_at, finished_at;
     Adjudication adjudication;
+    int wins = 0, draws = 0, losses = 0;  // placar do candidate (partidas na estatística)
 };
 
 std::optional<TestStatsSnapshot> load_test_stats(pqxx::connection& conn, std::int64_t test_id);

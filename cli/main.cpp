@@ -251,6 +251,13 @@ int cmd_status(Api& api, long long id) {
               << pe["ld"].get<long long>() << " · DD/WL " << pe["dd_wl"].get<long long>()
               << " · WD " << pe["wd"].get<long long>() << " · WW " << pe["ww"].get<long long>()
               << "\n";
+    if (s.contains("score")) {
+        const auto& sc = s["score"];
+        std::cout << "  placar     +" << sc["wins"].get<int>() << " =" << sc["draws"].get<int>()
+                  << " -" << sc["losses"].get<int>() << "  (" << opt_num(sc["points"], "%.1f")
+                  << " / " << sc["games"].get<int>() << ", " << opt_num(sc["pct"], "%.1f")
+                  << "%)\n";
+    }
     std::cout << "  Elo        " << opt_num(e["value"], "%+.2f") << "  ["
               << opt_num(e["ci_low"], "%+.2f") << ", " << opt_num(e["ci_high"], "%+.2f")
               << "] (95%, logístico)\n";

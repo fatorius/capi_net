@@ -25,6 +25,7 @@ function testRow(t) {
                 : t.llr === null ? h("span", { class: "muted" }, "–")
                 : [llrBar(t.llr, t.llr_lower, t.llr_upper), " ", fmt.num(t.llr)]),
     h("td", { class: "num" }, fmt.num(t.elo, 1, true)),
+    h("td", { class: "num", title: scoreText(t.score) }, scorePct(t.score)),
     h("td", { class: "num" }, `${fmt.int(t.pairs_valid)} / ${fmt.int(t.total_pairs)}`),
     h("td", { class: "num" }, t.priority),
     h("td", { class: "muted" }, fmt.ago(t.created_at)));
@@ -36,7 +37,8 @@ function table(tests) {
     h("thead", {}, h("tr", {},
       h("th", { class: "num" }, "id"), h("th", {}, "nome"), h("th", {}, "status"),
       h("th", {}, "resultado"), h("th", {}, "candidate vs baseline"), h("th", {}, "LLR"),
-      h("th", { class: "num" }, "Elo"), h("th", { class: "num" }, "pares"),
+      h("th", { class: "num" }, "Elo"),
+      h("th", { class: "num", title: "pontos do candidate (vitória = 1, empate = ½)" }, "placar"), h("th", { class: "num" }, "pares"),
       h("th", { class: "num" }, "prio."), h("th", {}, "criado"))),
     h("tbody", {}, tests.map(testRow))));
 }

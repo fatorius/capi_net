@@ -231,7 +231,7 @@ def main(server_bin):
         subprocess.run(["bash", str(ROOT / "scripts/migrate.sh"), DB], check=True,
                        stdout=subprocess.DEVNULL)
 
-        t1 = create_test("exhaust", "sprt", "queued", 10, 6, 0, 5, tc_base=1, tc_inc=0)
+        t1 = create_test("exhaust", "sprt", "queued", 10, 7, 0, 5, tc_base=1, tc_inc=0)
         t2 = create_test("accept", "sprt", "queued", 5, 12, 0, 100)
         t3 = create_test("gauntlet", "gauntlet", "queued", 0, 200)
 
@@ -286,6 +286,15 @@ def main(server_bin):
         check(call("POST", f"/api/jobs/{b}/result",
                    {"client_id": c1, "games": [game(0, "draw")]})[0] == 400,
               "par com 1 partida -> 400")
+        st, cl2 = claim(c1, 1)
+        slow = cl2["pairs"][0]["pair_id"]
+        g_sleep = game(0, "candidate_win", termination="timeout")
+        g_sleep["duration_ms"] = 208000  # host dormiu: 80 plies em 208 s com 10+0.1
+        check(call("POST", f"/api/jobs/{slow}/result",
+                   {"client_id": c1, "games": [g_sleep, game(1, "draw")]})[1] ==
+              {"status": "accepted", "valid_games": 1}, "duração implausível invalida a partida")
+        check(psql(f"SELECT invalid_reason FROM games WHERE pair_id={slow} AND NOT valid")
+              == "duration_implausible", "invalid_reason = duration_implausible")
         bad = game(1, "draw")
         bad["outcome"] = "won"
         check(call("POST", f"/api/jobs/{b}/result",
@@ -295,7 +304,9 @@ def main(server_bin):
         s = stats(t1)
         check(s["pairs"]["valid"] == 1 and s["penta"]["wd"] == 1,
               "par com crash fora da estatística; W+D conta como WD")
-        check(s["pairs"]["completed"] == 2 and s["pairs"]["pending"] == 4, "contagens de pares")
+        check(s["score"] == {"wins": 1, "draws": 1, "losses": 0, "games": 2, "points": 1.5,
+                             "pct": 75.0}, "placar conta só as partidas dos pares válidos")
+        check(s["pairs"]["completed"] == 3 and s["pairs"]["pending"] == 4, "contagens de pares")
 
         rows = psql(f"SELECT encode(pgn_gz, 'hex') FROM game_pgns gp JOIN games g "
                     f"ON g.id = gp.game_id WHERE g.pair_id = {a}").splitlines()
@@ -385,8 +396,13 @@ def main(server_bin):
         check(len(seen) == 200 and len(set(seen)) == 200, "cada par entregue exatamente uma vez")
         penta = [s["penta"][k] for k in ("ll", "ld", "dd_wl", "wd", "ww")]
         check(penta == tally, f"penta do server {penta} == contagem local {tally}")
-        check(s["status"] == "finished" and s["result"] == "pending",
-              "gauntlet termina ao esgotar, sem veredito")
+        check(s["status"] == "finished" and s["result"] == "completed",
+              "gauntlet termina ao esgotar como completed")
+        sc = s["score"]
+        check(sc["games"] == 400 and sc["wins"] + sc["draws"] + sc["losses"] == 400 and
+              sc["wins"] - sc["losses"] == tally[3] + 2 * tally[4] - tally[1] - 2 * tally[0] and
+              abs(sc["pct"] - 100 * (sc["wins"] + 0.5 * sc["draws"]) / 400) < 1e-9,
+              f"placar do gauntlet consistente com o pentanomial ({sc['wins']}/{sc['draws']}/{sc['losses']})")
 
         print("web UI e endpoints de leitura")
 
@@ -394,6 +410,9 @@ def main(server_bin):
             with urllib.request.urlopen(BASE + path, timeout=30) as r:
                 return r.status, r.headers, r.read().decode()
 
+        _, headers, _ = raw("/static/app.js")
+        check(headers.get("Cache-Control") == "no-cache" and headers.get("ETag"),
+              "estáticos com Cache-Control: no-cache e ETag (sem JS velho após atualizar)")
         for path, marker in [("/tests", "capi_net · testes"), (f"/tests/{t2}", "capi_net · teste"),
                              ("/tests/new", "novo teste"), ("/static/app.js", "function api("),
                              ("/static/app.css", "--accent")]:
