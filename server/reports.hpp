@@ -69,6 +69,19 @@ struct PgnChunk {
 std::vector<PgnChunk> pgn_batch(pqxx::connection& conn, std::int64_t test_id,
                                 std::int64_t after_game_id, int limit);
 
+// Partidas de um download de PGN, fixadas no início (ids em ordem e tamanho do
+// PGN comprimido de cada uma): o tamanho anunciado não muda durante o stream.
+struct PgnManifestEntry {
+    std::int64_t game_id;
+    std::int64_t gz_bytes;
+};
+std::vector<PgnManifestEntry> pgn_manifest(pqxx::connection& conn, std::int64_t test_id,
+                                           bool include_invalid);
+
+// PGNs comprimidos das partidas do teste com id em [first_id, last_id], em ordem.
+std::vector<PgnChunk> pgn_range(pqxx::connection& conn, std::int64_t test_id,
+                                std::int64_t first_id, std::int64_t last_id);
+
 bool test_exists(pqxx::connection& conn, std::int64_t test_id);
 
 }  // namespace capi::server

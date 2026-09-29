@@ -200,6 +200,66 @@ void register_web_routes(httplib::Server& svr, db::ConnectionPool& pool, const S
         res.set_content(*pgn, "application/x-chess-pgn; charset=utf-8");
     }));
 
+    // PGN agregado do teste comprimido (§11), com Content-Length: cada partida
+    // já está gravada como um membro gzip, e membros concatenados formam um
+    // .gz válido — o download sai sem descomprimir nada, ~5× menor e com
+    // tamanho conhecido (barra de progresso no navegador). Entre partidas vai
+    // um membro gzip com "\n" (linha em branco entre jogos). Por padrão só as
+    // partidas válidas (registros de crash não têm PGN de verdade); ?all=1
+    // inclui todas.
+    svr.Get(R"(/api/tests/(\d+)/pgn\.gz)",
+            guarded([&pool](const httplib::Request& req, httplib::Response& res) {
+        const auto id = path_id(req);
+        const bool all = req.has_param("all") && req.get_param_value("all") == "1";
+        auto conn = pool.acquire();
+        if (!test_exists(*conn, id)) {
+            send_error(res, 404, "test_not_found");
+            return;
+        }
+        auto manifest = std::make_shared<std::vector<PgnManifestEntry>>(pgn_manifest(*conn, id, all));
+        static const std::string separator = gzip_compress("\n");
+        std::size_t total = 0;
+        for (const auto& e : *manifest) total += static_cast<std::size_t>(e.gz_bytes);
+        total += separator.size() * manifest->size();
+
+        res.set_header("Content-Disposition",
+                       "attachment; filename=\"capi_net-test-" + std::to_string(id) + ".pgn.gz\"");
+        auto next = std::make_shared<std::size_t>(0);  // índice no manifesto
+        res.set_content_provider(
+            total, "application/gzip",
+            [&pool, id, manifest, next](std::size_t, std::size_t, httplib::DataSink& sink) {
+                try {
+                    if (*next >= manifest->size()) return true;
+                    const std::size_t end = std::min(*next + 200, manifest->size());
+                    auto c = pool.acquire();
+                    const auto batch = pgn_range(*c, id, (*manifest)[*next].game_id,
+                                                 (*manifest)[end - 1].game_id);
+                    // Só as partidas do manifesto, na ordem dele (a faixa de ids
+                    // pode conter partidas que ficaram de fora, ex: inválidas).
+                    std::size_t bi = 0;
+                    for (; *next < end; ++*next) {
+                        const auto want = (*manifest)[*next];
+                        while (bi < batch.size() && batch[bi].game_id < want.game_id) ++bi;
+                        if (bi == batch.size() || batch[bi].game_id != want.game_id ||
+                            static_cast<std::int64_t>(batch[bi].pgn_gz.size()) != want.gz_bytes) {
+                            log_error("pgn.gz of test " + std::to_string(id) + ": game " +
+                                      std::to_string(want.game_id) + " changed during download");
+                            return false;
+                        }
+                        const auto& gz = batch[bi].pgn_gz;
+                        if (!sink.write(gz.data(), gz.size()) ||
+                            !sink.write(separator.data(), separator.size())) {
+                            return false;
+                        }
+                    }
+                    return true;
+                } catch (const std::exception& e) {
+                    log_error("pgn.gz of test " + std::to_string(id) + ": " + e.what());
+                    return false;
+                }
+            });
+    }));
+
     // PGN agregado do teste (§11), descomprimido em fluxo, em lotes.
     svr.Get(R"(/api/tests/(\d+)/pgn)",
             guarded([&pool](const httplib::Request& req, httplib::Response& res) {

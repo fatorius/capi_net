@@ -469,6 +469,21 @@ def main(server_bin):
         check(st == 200 and body == PGN.format(r="1/2-1/2"), "PGN de uma partida, descomprimido")
         check(call("GET", f"/api/tests/{t1}/games/{gid}/pgn")[0] == 404,
               "PGN de partida de outro teste -> 404")
+        with urllib.request.urlopen(BASE + f"/api/tests/{t3}/pgn.gz", timeout=30) as r:
+            gz_headers, gz_body = r.headers, r.read()
+        text = gzip.decompress(gz_body).decode()
+        check(int(gz_headers["Content-Length"]) == len(gz_body) and
+              gz_headers.get("Transfer-Encoding") is None,
+              "pgn.gz com Content-Length exato (navegador mostra o tamanho)")
+        check(text.count("[Event ") == 400 and "\n\n[Event " in text and
+              "capi_net-test-" in gz_headers.get("Content-Disposition", ""),
+              "pgn.gz: 400 partidas válidas, separadas por linha em branco")
+        with urllib.request.urlopen(BASE + f"/api/tests/{t1}/pgn.gz", timeout=30) as r:
+            t1_valid = gzip.decompress(r.read()).decode()
+        with urllib.request.urlopen(BASE + f"/api/tests/{t1}/pgn.gz?all=1", timeout=30) as r:
+            t1_all = gzip.decompress(r.read()).decode()
+        check(t1_all.count("[Event ") > t1_valid.count("[Event "),
+              "pgn.gz: inválidas só com ?all=1")
         st, headers, body = raw(f"/api/tests/{t3}/pgn")
         check(st == 200 and body.count("[Event ") == 400 and
               "capi_net-test-" in headers.get("Content-Disposition", ""),

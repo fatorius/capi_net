@@ -145,6 +145,37 @@ std::vector<PgnChunk> pgn_batch(pqxx::connection& conn, std::int64_t test_id,
     return out;
 }
 
+std::vector<PgnManifestEntry> pgn_manifest(pqxx::connection& conn, std::int64_t test_id,
+                                           bool include_invalid) {
+    pqxx::read_transaction tx{conn};
+    std::vector<PgnManifestEntry> out;
+    for (const auto& row : tx.exec(R"(
+            SELECT g.id, octet_length(p.pgn_gz)
+            FROM games g JOIN game_pgns p ON p.game_id = g.id
+            WHERE g.test_id = $1 AND (g.valid OR $2)
+            ORDER BY g.id)",
+                                   pqxx::params{test_id, include_invalid})) {
+        out.push_back({row[0].as<std::int64_t>(), row[1].as<std::int64_t>()});
+    }
+    return out;
+}
+
+std::vector<PgnChunk> pgn_range(pqxx::connection& conn, std::int64_t test_id,
+                                std::int64_t first_id, std::int64_t last_id) {
+    pqxx::read_transaction tx{conn};
+    std::vector<PgnChunk> out;
+    for (const auto& row : tx.exec(R"(
+            SELECT g.id, p.pgn_gz FROM games g JOIN game_pgns p ON p.game_id = g.id
+            WHERE g.test_id = $1 AND g.id BETWEEN $2 AND $3
+            ORDER BY g.id)",
+                                   pqxx::params{test_id, first_id, last_id})) {
+        const auto bytes = row[1].as<pqxx::bytes>();
+        out.push_back({row[0].as<std::int64_t>(),
+                       std::string(reinterpret_cast<const char*>(bytes.data()), bytes.size())});
+    }
+    return out;
+}
+
 bool test_exists(pqxx::connection& conn, std::int64_t test_id) {
     pqxx::read_transaction tx{conn};
     return !tx.exec("SELECT 1 FROM tests WHERE id = $1", pqxx::params{test_id}).empty();

@@ -210,7 +210,8 @@ mount("tests", async (main) => {
         h("div", { class: "muted" }, `de ${fmt.int(t.pairs.total)}`)));
 
     const actions = h("div", { class: "actions" },
-      h("a", { class: "button", href: `/api/tests/${TEST_ID}/pgn` }, "Baixar PGN"),
+      h("a", { class: "button", href: `/api/tests/${TEST_ID}/pgn.gz`,
+        title: "PGN das partidas válidas, comprimido (.pgn.gz)" }, "Baixar PGN (.gz)"),
       ["queued", "validating"].includes(t.status)
         ? h("button", { onclick: () => setPriority(t.priority) }, "Alterar prioridade") : null,
       active ? h("button", { class: "danger", onclick: stopTest }, "Parar teste") : null);
